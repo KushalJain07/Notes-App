@@ -3,6 +3,7 @@ import java.awt.*;
 import java.awt.event.*;
 import java.io.*;
 import java.security.*;
+import java.text.SimpleDateFormat;
 import java.util.*;
 import java.nio.file.Files;
 
@@ -26,7 +27,7 @@ public class NotesApp extends JFrame {
         }
 
         setTitle("📓 Notes");
-        setSize(700, 800);
+        setSize(630, 800);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
         setLayout(new BorderLayout());
@@ -71,7 +72,9 @@ public class NotesApp extends JFrame {
         add(footer, BorderLayout.SOUTH);
 
         File dir = new File(NOTES_FOLDER);
-        if (!dir.exists()) dir.mkdir();
+        if (!dir.exists()) {
+            dir.mkdir();
+        }
 
         loadNotes();
     }
@@ -79,12 +82,16 @@ public class NotesApp extends JFrame {
     private boolean authenticateUser() {
         try {
             File dir = new File(NOTES_FOLDER);
-            if (!dir.exists()) dir.mkdir();
+            if (!dir.exists()) {
+                dir.mkdir();
+            }
             File passwordFile = new File(NOTES_FOLDER, PASSWORD_FILE);
 
             if (!passwordFile.exists()) {
                 String newPassword = promptPassword("Set a password to protect your notes:");
-                if (newPassword == null || newPassword.trim().isEmpty()) return false;
+                if (newPassword == null || newPassword.trim().isEmpty()) {
+                    return false;
+                }
 
                 String hash = hashPassword(newPassword);
                 try (FileWriter fw = new FileWriter(passwordFile)) {
@@ -95,12 +102,17 @@ public class NotesApp extends JFrame {
                 String savedHash = new String(Files.readAllBytes(passwordFile.toPath()));
                 for (int i = 0; i < 3; i++) {
                     String input = promptPassword("Enter password:");
-                    if (input == null) return false;
+                    if (input == null) {
+                        return false;
+                    }
 
                     String inputHash = hashPassword(input);
-                    if (inputHash.equals(savedHash)) return true;
+                    if (inputHash.equals(savedHash)) {
+                        return true;
+                    }
 
-                    JOptionPane.showMessageDialog(null, "Incorrect password!", "Authentication Failed", JOptionPane.ERROR_MESSAGE);
+                    JOptionPane.showMessageDialog(null, "Incorrect password!", "Authentication Failed",
+                            JOptionPane.ERROR_MESSAGE);
                 }
                 return false;
             }
@@ -112,8 +124,11 @@ public class NotesApp extends JFrame {
 
     private String promptPassword(String message) {
         JPasswordField pf = new JPasswordField();
-        int okCxl = JOptionPane.showConfirmDialog(null, pf, message, JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
-        if (okCxl == JOptionPane.OK_OPTION) return new String(pf.getPassword());
+        int okCxl = JOptionPane.showConfirmDialog(null, pf, message, JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.PLAIN_MESSAGE);
+        if (okCxl == JOptionPane.OK_OPTION) {
+            return new String(pf.getPassword());
+        }
         return null;
     }
 
@@ -121,14 +136,39 @@ public class NotesApp extends JFrame {
         MessageDigest md = MessageDigest.getInstance("SHA-256");
         byte[] hash = md.digest(password.getBytes());
         StringBuilder sb = new StringBuilder();
-        for (byte b : hash) sb.append(String.format("%02x", b));
+        for (byte b : hash) {
+            sb.append(String.format("%02x", b));
+        }
         return sb.toString();
     }
 
     private void loadNotes() {
         File dir = new File(NOTES_FOLDER);
         File[] files = dir.listFiles((d, name) -> name.endsWith(".txt"));
-        allNotes = files != null ? Arrays.asList(files) : new ArrayList<>();
+        if (files == null) {
+            allNotes = new ArrayList<>();
+            return;
+        }
+
+        // Sort files by second line (date) in descending order
+        Arrays.sort(files, (f1, f2) -> {
+            try (BufferedReader br1 = new BufferedReader(new FileReader(f1));
+                 BufferedReader br2 = new BufferedReader(new FileReader(f2))) {
+                br1.readLine(); // Skip title
+                br2.readLine();
+                String d1 = br1.readLine(); // Read date
+                String d2 = br2.readLine();
+
+                SimpleDateFormat sdf = new SimpleDateFormat("dd-MM-yyyy");
+                Date date1 = sdf.parse(d1);
+                Date date2 = sdf.parse(d2);
+                return date2.compareTo(date1); // descending
+            } catch (Exception e) {
+                return 0;
+            }
+        });
+
+        allNotes = Arrays.asList(files);
         displayNotes("");
     }
 
@@ -143,17 +183,53 @@ public class NotesApp extends JFrame {
 
                 if (title.toLowerCase().contains(query)) {
                     hasNotes = true;
+
+                    JPanel noteCard = new JPanel();
+                    noteCard.setLayout(new BoxLayout(noteCard, BoxLayout.X_AXIS));
+                    noteCard.setMaximumSize(new Dimension(650, 80));
+                    noteCard.setAlignmentX(Component.LEFT_ALIGNMENT);
+
                     JButton noteBtn = new JButton("<html><b>" + title + "</b><br><i>" + date + "</i><br>" + preview + "...</html>");
                     noteBtn.setFont(new Font("SansSerif", Font.PLAIN, 14));
                     noteBtn.setBackground(ACCENT);
                     noteBtn.setForeground(Color.BLACK);
                     noteBtn.setFocusPainted(false);
                     noteBtn.setHorizontalAlignment(SwingConstants.LEFT);
-                    noteBtn.setMaximumSize(new Dimension(650, 80));
+                    noteBtn.setPreferredSize(new Dimension(580, 80));
                     noteBtn.addActionListener(e -> showNoteEditor(file.getName(), title, readFullContent(file)));
 
+                    JButton deleteBtn = new JButton("🗑️");
+                    deleteBtn.setFocusPainted(false);
+                    deleteBtn.setFont(new Font("SansSerif", Font.BOLD, 16));
+                    deleteBtn.setBackground(Color.WHITE);
+                    deleteBtn.setBorder(null);
+                    deleteBtn.setToolTipText("Delete Note");
+                    deleteBtn.setPreferredSize(new Dimension(60, 60));
+                    deleteBtn.setMaximumSize(new Dimension(60, 60));
+                    deleteBtn.setMinimumSize(new Dimension(60, 60));
+                    deleteBtn.setAlignmentY(Component.CENTER_ALIGNMENT);
+                    deleteBtn.addActionListener(e -> {
+                        int confirm = JOptionPane.showConfirmDialog(this,
+                                "Are you sure you want to delete this note?",
+                                "Delete Note", JOptionPane.YES_NO_OPTION);
+                        if (confirm == JOptionPane.YES_OPTION) {
+                            if (file.delete()) {
+                                JOptionPane.showMessageDialog(this, "Note deleted.");
+                                allNotes = Arrays.asList(new File(NOTES_FOLDER)
+                                        .listFiles((dir, name) -> name.endsWith(".txt")));
+                                displayNotes(searchField.getText().toLowerCase());
+                            } else {
+                                JOptionPane.showMessageDialog(this, "Failed to delete note.");
+                            }
+                        }
+                    });
+
+                    noteCard.add(noteBtn);
+                    noteCard.add(Box.createRigidArea(new Dimension(10, 0)));
+                    noteCard.add(deleteBtn);
+
                     notesPanel.add(Box.createVerticalStrut(10));
-                    notesPanel.add(noteBtn);
+                    notesPanel.add(noteCard);
                 }
             } catch (IOException e) {
                 showError("Error reading note: " + file.getName());
@@ -183,7 +259,7 @@ public class NotesApp extends JFrame {
         titleField.setFont(new Font("SansSerif", Font.BOLD, 22));
         titleField.setBorder(BorderFactory.createTitledBorder("Title"));
 
-        JTextField dateField = new JTextField(new java.text.SimpleDateFormat("dd-MM-yyyy").format(new Date()));
+        JTextField dateField = new JTextField(new SimpleDateFormat("dd-MM-yyyy").format(new Date()));
         dateField.setFont(new Font("SansSerif", Font.PLAIN, 18));
         dateField.setBorder(BorderFactory.createTitledBorder("Date"));
 
@@ -221,7 +297,8 @@ public class NotesApp extends JFrame {
             }
 
             try {
-                String fname = fileName != null ? fileName : title.replaceAll("\\s+", "_") + "_" + System.currentTimeMillis() + ".txt";
+                String fname = fileName != null ? fileName
+                        : title.replaceAll("\\s+", "_") + "_" + System.currentTimeMillis() + ".txt";
                 FileWriter writer = new FileWriter(new File(NOTES_FOLDER, fname));
                 writer.write(title + "\n" + date + "\n" + text);
                 writer.close();
@@ -243,7 +320,9 @@ public class NotesApp extends JFrame {
             br.readLine(); // date
             StringBuilder content = new StringBuilder();
             String line;
-            while ((line = br.readLine()) != null) content.append(line).append("\n");
+            while ((line = br.readLine()) != null) {
+                content.append(line).append("\n");
+            }
             return content.toString().trim();
         } catch (IOException e) {
             return "";
